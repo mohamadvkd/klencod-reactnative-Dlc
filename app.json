@@ -1,0 +1,5 @@
+{
+  "name": "Dlc",
+  "displayName": "Dlc",
+  "android": {"packageName": "aof.fog.tgl"}
+}
