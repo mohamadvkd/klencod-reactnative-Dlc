@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -12,27 +12,28 @@ import {
 } from 'react-native';
 
 // ============================================================
-// تعريف الفئات والوحدات
+// أنواع البيانات
 // ============================================================
 type Unit = {
   id: string;
   name: string;
-  factor: number; // معامل التحويل إلى الوحدة الأساسية
+  factor: number;
 };
 
 type Category = {
   id: string;
   name: string;
-  baseUnit: string;
   units: Unit[];
   isTemperature?: boolean;
 };
 
+// ============================================================
+// الفئات والوحدات
+// ============================================================
 const CATEGORIES: Category[] = [
   {
     id: 'length',
     name: 'الطول',
-    baseUnit: 'm',
     units: [
       {id: 'mm', name: 'مليمتر', factor: 0.001},
       {id: 'cm', name: 'سنتيمتر', factor: 0.01},
@@ -47,7 +48,6 @@ const CATEGORIES: Category[] = [
   {
     id: 'weight',
     name: 'الوزن',
-    baseUnit: 'kg',
     units: [
       {id: 'mg', name: 'ملليجرام', factor: 0.000001},
       {id: 'g', name: 'جرام', factor: 0.001},
@@ -60,7 +60,6 @@ const CATEGORIES: Category[] = [
   {
     id: 'temperature',
     name: 'الحرارة',
-    baseUnit: 'c',
     isTemperature: true,
     units: [
       {id: 'c', name: 'سيليزيوس', factor: 1},
@@ -71,7 +70,6 @@ const CATEGORIES: Category[] = [
   {
     id: 'data',
     name: 'البيانات',
-    baseUnit: 'b',
     units: [
       {id: 'b', name: 'بايت', factor: 1},
       {id: 'kb', name: 'كيلوبايت', factor: 1024},
@@ -83,7 +81,6 @@ const CATEGORIES: Category[] = [
   {
     id: 'time',
     name: 'الوقت',
-    baseUnit: 's',
     units: [
       {id: 'ms', name: 'مللي ثانية', factor: 0.001},
       {id: 's', name: 'ثانية', factor: 1},
@@ -96,7 +93,6 @@ const CATEGORIES: Category[] = [
   {
     id: 'area',
     name: 'المساحة',
-    baseUnit: 'm2',
     units: [
       {id: 'cm2', name: 'سنتيمتر مربع', factor: 0.0001},
       {id: 'm2', name: 'متر مربع', factor: 1},
@@ -109,93 +105,104 @@ const CATEGORIES: Category[] = [
 ];
 
 // ============================================================
-// دوال التحويل
+// التحويل
 // ============================================================
+function convertTemperature(value: number, fromId: string, toId: string): number {
+  let celsius: number;
+  if (fromId === 'c') celsius = value;
+  else if (fromId === 'f') celsius = (value - 32) * (5 / 9);
+  else celsius = value - 273.15;
+
+  if (toId === 'c') return celsius;
+  if (toId === 'f') return celsius * (9 / 5) + 32;
+  return celsius + 273.15;
+}
+
 function convertValue(
   value: number,
   fromUnit: Unit,
   toUnit: Unit,
-  isTemperature: boolean,
+  isTemp: boolean,
 ): number {
-  if (isTemperature) {
-    // تحويل خاص لدرجات الحرارة
-    let celsius: number;
-    if (fromUnit.id === 'c') {
-      celsius = value;
-    } else if (fromUnit.id === 'f') {
-      celsius = (value - 32) * (5 / 9);
-    } else {
-      celsius = value - 273.15;
-    }
-
-    if (toUnit.id === 'c') return celsius;
-    if (toUnit.id === 'f') return celsius * (9 / 5) + 32;
-    return celsius + 273.15;
-  }
-
-  // تحويل عادي: value × fromUnit.factor ÷ toUnit.factor
+  if (isTemp) return convertTemperature(value, fromUnit.id, toUnit.id);
   return (value * fromUnit.factor) / toUnit.factor;
 }
 
 function formatNumber(value: number): string {
   if (!isFinite(value) || isNaN(value)) return '0';
-  if (Math.abs(value) < 0.0001 && value !== 0) {
-    return value.toExponential(4);
-  }
-  if (Math.abs(value) >= 1000000) {
-    return value.toExponential(4);
-  }
-  // تقريب لأقصى 6 خانات عشرية
+  if (value === 0) return '0';
+  const abs = Math.abs(value);
+  if (abs < 0.0001) return value.toExponential(4);
+  if (abs >= 1000000000) return value.toExponential(4);
   const rounded = Math.round(value * 1000000) / 1000000;
   return rounded.toString();
 }
 
 // ============================================================
-// مكوّن التطبيق الرئيسي
+// المكوّن الرئيسي
 // ============================================================
 export default function App() {
   const [activeCategoryIndex, setActiveCategoryIndex] = useState(0);
-  const [fromUnitIndex, setFromUnitIndex] = useState(0);
-  const [toUnitIndex, setToUnitIndex] = useState(1);
   const [inputValue, setInputValue] = useState('1');
-  const [lastFormula, setLastFormula] = useState('');
   const [copied, setCopied] = useState(false);
+  const [fromUnitId, setFromUnitId] = useState('m');
+  const [toUnitId, setToUnitId] = useState('ft');
 
   const category = CATEGORIES[activeCategoryIndex];
   const isTemp = category.isTemperature === true;
 
-  // عند تغيير الفئة، إعادة ضبط الوحدات
-  useEffect(() => {
-    if (fromUnitIndex >= category.units.length) setFromUnitIndex(0);
-    if (toUnitIndex >= category.units.length) setToUnitIndex(1);
-  }, [activeCategoryIndex]);
+  const fromUnit = useMemo(
+    () => category.units.find(u => u.id === fromUnitId) || category.units[0],
+    [category, fromUnitId],
+  );
 
-  // حساب النتيجة
-  const parsedInput = parseFloat(inputValue.replace(',', '.')) || 0;
-  const fromUnit = category.units[fromUnitIndex] || category.units[0];
-  const toUnit = category.units[toUnitIndex] || category.units[1] || category.units[0];
+  const toUnit = useMemo(
+    () => category.units.find(u => u.id === toUnitId)
+      || category.units[1]
+      || category.units[0],
+    [category, toUnitId],
+  );
 
-  let result = 0;
-  try {
-    result = convertValue(parsedInput, fromUnit, toUnit, isTemp);
-  } catch (e) {
-    result = 0;
-  }
+  const result = useMemo(() => {
+    const parsed = parseFloat(inputValue.replace(',', '.')) || 0;
+    try {
+      return convertValue(parsed, fromUnit, toUnit, isTemp);
+    } catch (e) {
+      return 0;
+    }
+  }, [inputValue, fromUnit, toUnit, isTemp]);
 
-  // تحديث الصيغة
-  useEffect(() => {
-    const formula = parsedInput + ' ' + fromUnit.name + ' = ' + formatNumber(result) + ' ' + toUnit.name;
-    setLastFormula(formula);
-  }, [inputValue, fromUnitIndex, toUnitIndex, activeCategoryIndex]);
+  const formula = useMemo(() => {
+    const parsed = parseFloat(inputValue.replace(',', '.')) || 0;
+    return (
+      parsed +
+      ' ' +
+      fromUnit.name +
+      ' = ' +
+      formatNumber(result) +
+      ' ' +
+      toUnit.name
+    );
+  }, [inputValue, fromUnit, toUnit, result]);
 
-  // تبديل الوحدات
-  const swapUnits = () => {
-    const temp = fromUnitIndex;
-    setFromUnitIndex(toUnitIndex);
-    setToUnitIndex(temp);
+  const changeCategory = (index: number) => {
+    setActiveCategoryIndex(index);
+    const newCategory = CATEGORIES[index];
+    if (newCategory.units.length >= 2) {
+      setFromUnitId(newCategory.units[0].id);
+      setToUnitId(newCategory.units[1].id);
+    } else if (newCategory.units.length === 1) {
+      setFromUnitId(newCategory.units[0].id);
+      setToUnitId(newCategory.units[0].id);
+    }
   };
 
-  // نسخ النتيجة
+  const swapUnits = () => {
+    const temp = fromUnitId;
+    setFromUnitId(toUnitId);
+    setToUnitId(temp);
+  };
+
   const copyResult = () => {
     Clipboard.setString(formatNumber(result));
     setCopied(true);
@@ -203,21 +210,21 @@ export default function App() {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  // إعادة تعيين
   const reset = () => {
     setInputValue('1');
-    setFromUnitIndex(0);
-    setToUnitIndex(1);
+    if (category.units.length >= 2) {
+      setFromUnitId(category.units[0].id);
+      setToUnitId(category.units[1].id);
+    }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>محوّل الوحدات</Text>
-        <Text style={styles.headerSubtitle}>Dlc</Text>
+        <Text style={styles.headerSubtitle}>أداة سريعة للتحويل بين الوحدات</Text>
       </View>
 
-      {/* التبويبات */}
       <View style={styles.tabsContainer}>
         <ScrollView
           horizontal
@@ -230,11 +237,8 @@ export default function App() {
                 styles.tab,
                 index === activeCategoryIndex && styles.tabActive,
               ]}
-              onPress={() => {
-                setActiveCategoryIndex(index);
-                setFromUnitIndex(0);
-                setToUnitIndex(1);
-              }}>
+              onPress={() => changeCategory(index)}
+              activeOpacity={0.7}>
               <Text
                 style={[
                   styles.tabText,
@@ -252,7 +256,6 @@ export default function App() {
         contentContainerStyle={styles.bodyContent}
         keyboardShouldPersistTaps="handled">
 
-        {/* بطاقة "من" */}
         <View style={styles.card}>
           <Text style={styles.cardLabel}>من</Text>
           <TextInput
@@ -269,18 +272,19 @@ export default function App() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.unitSelectorContent}>
-              {category.units.map((unit, index) => (
+              {category.units.map((unit) => (
                 <TouchableOpacity
-                  key={unit.id}
+                  key={'from-' + unit.id}
                   style={[
                     styles.unitChip,
-                    index === fromUnitIndex && styles.unitChipActive,
+                    unit.id === fromUnit.id && styles.unitChipActive,
                   ]}
-                  onPress={() => setFromUnitIndex(index)}>
+                  onPress={() => setFromUnitId(unit.id)}
+                  activeOpacity={0.7}>
                   <Text
                     style={[
                       styles.unitChipText,
-                      index === fromUnitIndex && styles.unitChipTextActive,
+                      unit.id === fromUnit.id && styles.unitChipTextActive,
                     ]}>
                     {unit.name}
                   </Text>
@@ -290,15 +294,19 @@ export default function App() {
           </View>
         </View>
 
-        {/* زر التبديل */}
-        <TouchableOpacity style={styles.swapButton} onPress={swapUnits}>
+        <TouchableOpacity
+          style={styles.swapButton}
+          onPress={swapUnits}
+          activeOpacity={0.7}>
           <Text style={styles.swapButtonText}>تبديل</Text>
         </TouchableOpacity>
 
-        {/* بطاقة "إلى" */}
         <View style={[styles.card, styles.cardResult]}>
           <Text style={styles.cardLabel}>إلى</Text>
-          <Text style={styles.resultValue} numberOfLines={1} adjustsFontSizeToFit>
+          <Text
+            style={styles.resultValue}
+            numberOfLines={1}
+            adjustsFontSizeToFit>
             {formatNumber(result)}
           </Text>
           <View style={styles.unitSelector}>
@@ -306,18 +314,19 @@ export default function App() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.unitSelectorContent}>
-              {category.units.map((unit, index) => (
+              {category.units.map((unit) => (
                 <TouchableOpacity
-                  key={unit.id}
+                  key={'to-' + unit.id}
                   style={[
                     styles.unitChip,
-                    index === toUnitIndex && styles.unitChipActive,
+                    unit.id === toUnit.id && styles.unitChipActive,
                   ]}
-                  onPress={() => setToUnitIndex(index)}>
+                  onPress={() => setToUnitId(unit.id)}
+                  activeOpacity={0.7}>
                   <Text
                     style={[
                       styles.unitChipText,
-                      index === toUnitIndex && styles.unitChipTextActive,
+                      unit.id === toUnit.id && styles.unitChipTextActive,
                     ]}>
                     {unit.name}
                   </Text>
@@ -327,16 +336,15 @@ export default function App() {
           </View>
         </View>
 
-        {/* الصيغة */}
         <View style={styles.formulaBox}>
-          <Text style={styles.formulaText}>{lastFormula}</Text>
+          <Text style={styles.formulaText}>{formula}</Text>
         </View>
 
-        {/* الأزرار */}
         <View style={styles.actionsRow}>
           <TouchableOpacity
             style={[styles.actionButton, styles.actionButtonPrimary]}
-            onPress={copyResult}>
+            onPress={copyResult}
+            activeOpacity={0.7}>
             <Text style={styles.actionButtonPrimaryText}>
               {copied ? 'تم النسخ' : 'نسخ النتيجة'}
             </Text>
@@ -344,7 +352,8 @@ export default function App() {
 
           <TouchableOpacity
             style={[styles.actionButton, styles.actionButtonSecondary]}
-            onPress={reset}>
+            onPress={reset}
+            activeOpacity={0.7}>
             <Text style={styles.actionButtonSecondaryText}>إعادة تعيين</Text>
           </TouchableOpacity>
         </View>
